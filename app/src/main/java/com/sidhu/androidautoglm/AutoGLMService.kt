@@ -209,12 +209,15 @@ class AutoGLMService : AccessibilityService() {
         
         // 3. Take Screenshot
         val screenshot = suspendCoroutine<Bitmap?> { continuation ->
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                takeScreenshot(
-                    Display.DEFAULT_DISPLAY,
-                    mainExecutor,
-                    object : TakeScreenshotCallback {
-                        override fun onSuccess(screenshot: ScreenshotResult) {
+            val windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+            val displayId = windowManager.defaultDisplay.displayId
+            
+            takeScreenshot(
+                displayId,
+                mainExecutor,
+                object : TakeScreenshotCallback {
+                    override fun onSuccess(screenshot: ScreenshotResult) {
+                        try {
                             val bitmap = Bitmap.wrapHardwareBuffer(
                                 screenshot.hardwareBuffer,
                                 screenshot.colorSpace
@@ -223,18 +226,25 @@ class AutoGLMService : AccessibilityService() {
                             val softwareBitmap = bitmap?.copy(Bitmap.Config.ARGB_8888, false)
                             screenshot.hardwareBuffer.close()
                             continuation.resume(softwareBitmap)
-                        }
-
-                        override fun onFailure(errorCode: Int) {
-                            Log.e("AutoGLMService", "Screenshot failed: $errorCode")
+                        } catch (e: Exception) {
+                            Log.e("AutoGLMService", "Error processing screenshot", e)
                             continuation.resume(null)
                         }
                     }
-                )
-            } else {
-                Log.e("AutoGLMService", "Screenshot requires Android 11+")
-                continuation.resume(null)
-            }
+
+                    override fun onFailure(errorCode: Int) {
+                        val errorMsg = when(errorCode) {
+                            ERROR_TAKE_SCREENSHOT_INTERNAL_ERROR -> "INTERNAL_ERROR"
+                            ERROR_TAKE_SCREENSHOT_NO_ACCESSIBILITY_ACCESS -> "NO_ACCESSIBILITY_ACCESS"
+                            ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT -> "INTERVAL_TIME_SHORT"
+                            ERROR_TAKE_SCREENSHOT_INVALID_DISPLAY -> "INVALID_DISPLAY"
+                            else -> "UNKNOWN($errorCode)"
+                        }
+                        Log.e("AutoGLMService", "Screenshot failed: $errorMsg")
+                        continuation.resume(null)
+                    }
+                }
+            )
         }
         
         // 4. Restore Floating Window
