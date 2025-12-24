@@ -5,17 +5,13 @@ import android.accessibilityservice.GestureDescription
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Path
-import android.os.Build
 import android.util.Log
-import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withTimeout
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
-
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 
 import android.graphics.PixelFormat
 import android.view.Gravity
@@ -26,7 +22,6 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.os.Handler
 import android.os.Looper
-import android.util.DisplayMetrics
 
 class AutoGLMService : AccessibilityService() {
 
@@ -58,6 +53,10 @@ class AutoGLMService : AccessibilityService() {
         return super.onUnbind(intent)
     }
     
+    /**
+     * Shows the floating window. Creates the controller if needed.
+     * @param onStop Optional callback when stop button is clicked
+     */
     fun showFloatingWindow(onStop: () -> Unit) {
         Handler(Looper.getMainLooper()).post {
             if (floatingWindowController == null) {
@@ -66,10 +65,41 @@ class AutoGLMService : AccessibilityService() {
             floatingWindowController?.show(onStop)
         }
     }
-    
+
+    /**
+     * Hides and removes the floating window completely.
+     * Use setFloatingWindowVisible(false) for temporary hiding (e.g., during screenshots).
+     */
     fun hideFloatingWindow() {
         Handler(Looper.getMainLooper()).post {
             floatingWindowController?.hide()
+        }
+    }
+
+    /**
+     * Sets floating window visibility without removing it and waits for layout to complete.
+     *
+     * This is preferred over hideFloatingWindow() for temporary hiding during gestures/screenshots
+     * where you need to ensure the layout is updated before proceeding.
+     */
+    private suspend fun setFloatingWindowVisibleAndWait(visible: Boolean) {
+        suspendCoroutine<Unit> { continuation ->
+            Handler(Looper.getMainLooper()).post {
+                floatingWindowController?.setScreenshotMode(!visible) {
+                    continuation.resume(Unit)
+                }
+            }
+        }
+    }
+
+    /**
+     * Sets floating window visibility without removing it, returns immediately.
+     *
+     * This is a fire-and-forget version that doesn't wait for layout to complete.
+     */
+    private fun setFloatingWindowVisible(visible: Boolean) {
+        Handler(Looper.getMainLooper()).post {
+            floatingWindowController?.setScreenshotMode(!visible)
         }
     }
     
@@ -197,135 +227,134 @@ class AutoGLMService : AccessibilityService() {
             Log.e("AutoGLMService", "Failed to show gesture animation", e)
         }
     }
-    
-    suspend fun takeScreenshot(): Bitmap? {
-        // 1. Hide Floating Window
-        Handler(Looper.getMainLooper()).post {
-            floatingWindowController?.setScreenshotMode(true)
-        }
-        
-        // 2. Wait for UI update (small delay)
-        kotlinx.coroutines.delay(150)
-        
-        // 3. Take Screenshot
-        val screenshot = suspendCoroutine<Bitmap?> { continuation ->
-            val windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-            val displayId = windowManager.defaultDisplay.displayId
-            
-            takeScreenshot(
-                displayId,
-                mainExecutor,
-                object : TakeScreenshotCallback {
-                    override fun onSuccess(screenshot: ScreenshotResult) {
-                        try {
-                            val bitmap = Bitmap.wrapHardwareBuffer(
-                                screenshot.hardwareBuffer,
-                                screenshot.colorSpace
-                            )
-                            // Copy to software bitmap for processing
-                            val softwareBitmap = bitmap?.copy(Bitmap.Config.ARGB_8888, false)
-                            screenshot.hardwareBuffer.close()
-                            continuation.resume(softwareBitmap)
-                        } catch (e: Exception) {
-                            Log.e("AutoGLMService", "Error processing screenshot", e)
-                            continuation.resume(null)
-                        }
-                    }
 
-                    override fun onFailure(errorCode: Int) {
-                        val errorMsg = when(errorCode) {
-                            ERROR_TAKE_SCREENSHOT_INTERNAL_ERROR -> "INTERNAL_ERROR"
-                            ERROR_TAKE_SCREENSHOT_NO_ACCESSIBILITY_ACCESS -> "NO_ACCESSIBILITY_ACCESS"
-                            ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT -> "INTERVAL_TIME_SHORT"
-                            ERROR_TAKE_SCREENSHOT_INVALID_DISPLAY -> "INVALID_DISPLAY"
-                            else -> "UNKNOWN($errorCode)"
+    /**
+     * Takes a screenshot with callback-based completion and timeout.
+     * Uses async callback for floating window state changes instead of hardcoded delays.
+     *
+     * @param timeoutMs Timeout for the screenshot operation in milliseconds (default: 5000ms)
+     * @return The screenshot bitmap, or null if failed/timeout
+     */
+    suspend fun takeScreenshot(timeoutMs: Long = 5000): Bitmap? {
+        // Use withTimeout to handle screenshot operation timeout
+        return try {
+            withTimeout(timeoutMs) {
+                // 1. Hide Floating Window and wait for layout to complete
+                setFloatingWindowVisibleAndWait(false)
+
+                // 2. Take Screenshot with callback
+                val screenshot = suspendCoroutine<Bitmap?> { continuation ->
+                    val windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+                    val displayId = windowManager.defaultDisplay.displayId
+
+                    takeScreenshot(
+                        displayId,
+                        mainExecutor,
+                        object : TakeScreenshotCallback {
+                            override fun onSuccess(screenshot: ScreenshotResult) {
+                                try {
+                                    val bitmap = Bitmap.wrapHardwareBuffer(
+                                        screenshot.hardwareBuffer,
+                                        screenshot.colorSpace
+                                    )
+                                    // Copy to software bitmap for processing
+                                    val softwareBitmap = bitmap?.copy(Bitmap.Config.ARGB_8888, false)
+                                    screenshot.hardwareBuffer.close()
+                                    continuation.resume(softwareBitmap)
+                                } catch (e: Exception) {
+                                    Log.e("AutoGLMService", "Error processing screenshot", e)
+                                    continuation.resume(null)
+                                }
+                            }
+
+                            override fun onFailure(errorCode: Int) {
+                                val errorMsg = when(errorCode) {
+                                    ERROR_TAKE_SCREENSHOT_INTERNAL_ERROR -> "INTERNAL_ERROR"
+                                    ERROR_TAKE_SCREENSHOT_NO_ACCESSIBILITY_ACCESS -> "NO_ACCESSIBILITY_ACCESS"
+                                    ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT -> "INTERVAL_TIME_SHORT"
+                                    ERROR_TAKE_SCREENSHOT_INVALID_DISPLAY -> "INVALID_DISPLAY"
+                                    else -> "UNKNOWN($errorCode)"
+                                }
+                                Log.e("AutoGLMService", "Screenshot failed: $errorMsg")
+                                continuation.resume(null)
+                            }
                         }
-                        Log.e("AutoGLMService", "Screenshot failed: $errorMsg")
-                        continuation.resume(null)
-                    }
+                    )
                 }
-            )
-        }
-        
-        // 4. Restore Floating Window
-        Handler(Looper.getMainLooper()).post {
-            floatingWindowController?.setScreenshotMode(false)
-        }
-        
-        return screenshot
-    }
-    
-    private fun setInteractionHidden(hidden: Boolean) {
-        if (hidden) {
-            val latch = CountDownLatch(1)
-            Handler(Looper.getMainLooper()).post {
-                floatingWindowController?.setScreenshotMode(true)
-                latch.countDown()
+
+                // 3. Restore Floating Window (fire-and-forget)
+                setFloatingWindowVisible(true)
+
+                screenshot
             }
-            try {
-                latch.await(200, TimeUnit.MILLISECONDS)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        } else {
-            Handler(Looper.getMainLooper()).post {
-                floatingWindowController?.setScreenshotMode(false)
-            }
+        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            Log.e("AutoGLMService", "Screenshot operation timed out after $timeoutMs ms")
+            // Ensure floating window is restored even on timeout
+            setFloatingWindowVisible(true)
+            null
         }
     }
 
-    fun performTap(x: Float, y: Float): Boolean {
+    suspend fun performTap(x: Float, y: Float): Boolean {
         val serviceWidth = getScreenWidth()
         val serviceHeight = getScreenHeight()
         Log.d("AutoGLMService", "performTap: Request($x, $y) vs Screen($serviceWidth, $serviceHeight)")
-        
+
         if (x < 0 || x > serviceWidth || y < 0 || y > serviceHeight) {
             Log.w("AutoGLMService", "Tap coordinates ($x, $y) out of bounds")
             return false
         }
 
         Log.d("AutoGLMService", "Dispatching Gesture: Tap at ($x, $y)")
-        
+
         // Check overlap and move if necessary
         Handler(Looper.getMainLooper()).post {
              floatingWindowController?.avoidArea(x, y)
         }
-        
-        // Hide floating window to prevent blocking the tap
-        setInteractionHidden(true)
-        
+
+        // Hide floating window and wait for layout to complete BEFORE dispatching gesture
+        setFloatingWindowVisibleAndWait(false)
+
         // Show visual indicator on UI thread
         Handler(Looper.getMainLooper()).post {
             showGestureAnimation(x, y)
         }
-        
-        val path = Path().apply { 
-            moveTo(x, y) 
-            lineTo(x, y)
-        }
-        val builder = GestureDescription.Builder()
-        builder.addStroke(GestureDescription.StrokeDescription(path, 0, 100))
-        val result = dispatchGesture(builder.build(), object : GestureResultCallback() {
-            override fun onCompleted(gestureDescription: GestureDescription?) {
-                Log.d("AutoGLMService", "Gesture Completed: Tap at ($x, $y)")
-                setInteractionHidden(false)
-            }
 
-            override fun onCancelled(gestureDescription: GestureDescription?) {
-                Log.w("AutoGLMService", "Gesture Cancelled: Tap at ($x, $y)")
-                setInteractionHidden(false)
+        // Dispatch gesture and wait for completion
+        val result = suspendCoroutine<Boolean> { continuation ->
+            val path = Path().apply {
+                moveTo(x, y)
+                lineTo(x, y)
             }
-        }, null)
-        
-        if (!result) {
-            setInteractionHidden(false)
+            val builder = GestureDescription.Builder()
+            builder.addStroke(GestureDescription.StrokeDescription(path, 0, 100))
+
+            val dispatchResult = dispatchGesture(builder.build(), object : GestureResultCallback() {
+                override fun onCompleted(gestureDescription: GestureDescription?) {
+                    Log.d("AutoGLMService", "Gesture Completed: Tap at ($x, $y)")
+                    setFloatingWindowVisible(true)
+                    continuation.resume(true)
+                }
+
+                override fun onCancelled(gestureDescription: GestureDescription?) {
+                    Log.w("AutoGLMService", "Gesture Cancelled: Tap at ($x, $y)")
+                    setFloatingWindowVisible(true)
+                    continuation.resume(false)
+                }
+            }, null)
+
+            if (!dispatchResult) {
+                // If dispatch failed immediately, restore window and return false
+                setFloatingWindowVisible(true)
+                continuation.resume(false)
+            }
         }
-        
+
         Log.d("AutoGLMService", "dispatchGesture result: $result")
         return result
     }
-    
-    fun performSwipe(startX: Float, startY: Float, endX: Float, endY: Float, duration: Long = 1000): Boolean {
+
+    suspend fun performSwipe(startX: Float, startY: Float, endX: Float, endY: Float, duration: Long = 1000): Boolean {
         // Check overlap and move if necessary (using start position)
         Handler(Looper.getMainLooper()).post {
              floatingWindowController?.avoidArea(startX, startY)
@@ -336,35 +365,43 @@ class AutoGLMService : AccessibilityService() {
              showGestureAnimation(startX, startY, endX, endY, duration)
         }
 
-        setInteractionHidden(true)
-        
-        val path = Path().apply {
-            moveTo(startX, startY)
-            lineTo(endX, endY)
-        }
-        val builder = GestureDescription.Builder()
-        // Use a fixed shorter duration (500ms) for the actual gesture to ensure it registers as a fling/scroll
-        // The animation will play slower (duration) to be visible to the user
-        builder.addStroke(GestureDescription.StrokeDescription(path, 0, 500))
-        
-        val result = dispatchGesture(builder.build(), object : GestureResultCallback() {
-            override fun onCompleted(gestureDescription: GestureDescription?) {
-                setInteractionHidden(false)
-            }
+        // Hide floating window and wait for layout to complete BEFORE dispatching gesture
+        setFloatingWindowVisibleAndWait(false)
 
-            override fun onCancelled(gestureDescription: GestureDescription?) {
-                setInteractionHidden(false)
+        // Dispatch gesture and wait for completion
+        val result = suspendCoroutine<Boolean> { continuation ->
+            val path = Path().apply {
+                moveTo(startX, startY)
+                lineTo(endX, endY)
             }
-        }, null)
-        
-        if (!result) {
-            setInteractionHidden(false)
+            val builder = GestureDescription.Builder()
+            // Use a fixed shorter duration (500ms) for the actual gesture to ensure it registers as a fling/scroll
+            // The animation will play slower (duration) to be visible to the user
+            builder.addStroke(GestureDescription.StrokeDescription(path, 0, 500))
+
+            val dispatchResult = dispatchGesture(builder.build(), object : GestureResultCallback() {
+                override fun onCompleted(gestureDescription: GestureDescription?) {
+                    setFloatingWindowVisible(true)
+                    continuation.resume(true)
+                }
+
+                override fun onCancelled(gestureDescription: GestureDescription?) {
+                    setFloatingWindowVisible(true)
+                    continuation.resume(false)
+                }
+            }, null)
+
+            if (!dispatchResult) {
+                // If dispatch failed immediately, restore window and return false
+                setFloatingWindowVisible(true)
+                continuation.resume(false)
+            }
         }
-        
+
         return result
     }
 
-    fun performLongPress(x: Float, y: Float, duration: Long = 1000): Boolean {
+    suspend fun performLongPress(x: Float, y: Float, duration: Long = 1000): Boolean {
         Log.d("AutoGLMService", "Dispatching Gesture: Long Press at ($x, $y)")
         Handler(Looper.getMainLooper()).post {
             showGestureAnimation(x, y, null, null, duration)
