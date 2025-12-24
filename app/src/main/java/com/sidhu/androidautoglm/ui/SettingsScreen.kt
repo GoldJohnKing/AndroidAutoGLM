@@ -21,6 +21,17 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.Color
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
+import com.sidhu.androidautoglm.network.UpdateInfo
+import com.sidhu.androidautoglm.ui.UpdateDialog
+import com.sidhu.androidautoglm.utils.UpdateManager
 import com.sidhu.androidautoglm.BuildConfig
 import com.sidhu.androidautoglm.R
 
@@ -52,6 +63,23 @@ fun SettingsScreen(
     
     // Visibility toggle only for the input field in Edit Mode
     var isInputVisible by remember { mutableStateOf(false) }
+
+    // Update Logic
+    val context = LocalContext.current
+    var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) } // For showing dialog
+    var manualUpdateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
+    var isChecking by remember { mutableStateOf(false) }
+
+    if (updateInfo != null) {
+        UpdateDialog(
+            updateInfo = updateInfo!!,
+            onConfirm = {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(updateInfo!!.downloadUrl))
+                context.startActivity(intent)
+            },
+            onDismiss = { updateInfo = null }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -159,6 +187,57 @@ fun SettingsScreen(
                             modifier = Modifier.padding(top = 8.dp)
                         ) {
                             Text(stringResource(R.string.edit_api_key))
+                        }
+                    }
+                }
+
+                // Update Check Card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.check_update),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        
+                        Button(
+                            onClick = {
+                                isChecking = true
+                                Toast.makeText(context, context.getString(R.string.checking_update), Toast.LENGTH_SHORT).show()
+                                UpdateManager.checkUpdate(
+                                    context = context,
+                                    onUpdateAvailable = { info ->
+                                        isChecking = false
+                                        updateInfo = info
+                                    },
+                                    onNoUpdate = {
+                                        isChecking = false
+                                        Toast.makeText(context, context.getString(R.string.no_update), Toast.LENGTH_SHORT).show()
+                                    },
+                                    onError = { error ->
+                                        isChecking = false
+                                        Toast.makeText(context, context.getString(R.string.check_update_error, error), Toast.LENGTH_SHORT).show()
+                                    }
+                                )
+                            },
+                            enabled = !isChecking,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                             if (isChecking) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                            }
+                            Text(stringResource(R.string.check_update))
                         }
                     }
                 }

@@ -41,6 +41,15 @@ class MainActivity : ComponentActivity() {
                     val navController = rememberNavController()
                     val uiState by viewModel.uiState.collectAsState()
 
+                    // Auto Check Update
+                    var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
+                    LaunchedEffect(Unit) {
+                        UpdateManager.checkUpdate(
+                            context = this@MainActivity,
+                            onUpdateAvailable = { info -> updateInfo = info }
+                        )
+                    }
+
                     NavHost(navController = navController, startDestination = "chat") {
                         composable("chat") {
                             ChatScreen(
@@ -54,6 +63,7 @@ class MainActivity : ComponentActivity() {
                                 baseUrl = uiState.baseUrl,
                                 isGemini = uiState.isGemini,
                                 modelName = uiState.modelName,
+                                appUpdateInfo = updateInfo,
                                 currentLanguage = savedLang,
                                 onLanguageChange = { newLang ->
                                     val editor = prefs.edit()

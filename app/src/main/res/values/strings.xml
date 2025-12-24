@@ -98,4 +98,15 @@
     <string name="clear_chat_title">Clear Chat History</string>
     <string name="clear_chat_message">Are you sure you want to clear all chat history?</string>
     <string name="confirm">Confirm</string>
+
+    <!-- Update -->
+    <string name="update_available_title">New Version Available: %1$s</string>
+    <string name="update_now">Update Now</string>
+    <string name="update_later">Later</string>
+    <string name="check_update">Check Update</string>
+    <string name="checking_update">Checking for updates...</string>
+    <string name="no_update">You are using the latest version</string>
+    <string name="check_update_error">Check failed: %1$s</string>
+    <string name="version_title">Version</string>
+    <string name="new_version_badge">New</string>
 </resources>
