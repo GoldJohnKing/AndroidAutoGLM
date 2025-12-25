@@ -258,12 +258,21 @@ class FloatingWindowController(private val context: Context) : LifecycleOwner, V
         _isTaskRunning = running
     }
 
-    fun setScreenshotMode(isScreenshotting: Boolean) {
-        if (!isShowing || floatView == null) return
-        
+    /**
+     * Sets screenshot mode for the floating window.
+     *
+     * @param isScreenshotting True to hide window, false to show
+     * @param onComplete Optional callback invoked when layout is complete (if provided, waits for layout)
+     */
+    fun setScreenshotMode(isScreenshotting: Boolean, onComplete: (() -> Unit)? = null) {
+        if (!isShowing || floatView == null) {
+            onComplete?.invoke()
+            return
+        }
+
         try {
             floatView?.visibility = if (isScreenshotting) android.view.View.GONE else android.view.View.VISIBLE
-            
+
             // Update flags to ensure touches pass through when hidden
             if (isScreenshotting) {
                 windowParams.flags = windowParams.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
@@ -275,8 +284,23 @@ class FloatingWindowController(private val context: Context) : LifecycleOwner, V
                 windowParams.height = WindowManager.LayoutParams.WRAP_CONTENT
             }
             windowManager.updateViewLayout(floatView, windowParams)
+
+            // If callback provided, wait for layout to complete
+            if (onComplete != null) {
+                floatView?.viewTreeObserver?.addOnGlobalLayoutListener(object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+                    override fun onGlobalLayout() {
+                        // Remove listener to avoid multiple calls
+                        floatView?.viewTreeObserver?.removeOnGlobalLayoutListener(this)
+                        // Post to end of queue to ensure frame is rendered
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            onComplete.invoke()
+                        }
+                    }
+                })
+            }
         } catch (e: Exception) {
             e.printStackTrace()
+            onComplete?.invoke()
         }
     }
 
