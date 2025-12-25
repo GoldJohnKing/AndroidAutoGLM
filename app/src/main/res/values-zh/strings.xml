@@ -8,7 +8,8 @@
     <string name="send_button">发送</string>
     <string name="accessibility_error">请先开启无障碍服务</string>
     <string name="enable_action">去开启</string>
-    <string name="overlay_error">请授予悬浮窗权限</string>
+    <string name="overlay_error">需要悬浮窗权限以显示操作状态</string>
+    <string name="battery_optimization_error">需要忽略电池优化以防止服务被杀</string>
     <string name="grant_action">去授权</string>
     <string name="welcome_message">欢迎使用 AutoGLM\n我可以帮你操作手机。\n试着说：“帮我看看天气”</string>
 
@@ -86,6 +87,7 @@
     <string name="voice_permission_granted">已授权，请按住说话</string>
     <string name="voice_permission_denied">权限被拒绝</string>
     <string name="voice_release_to_send">松开发送</string>
+    <string name="voice_release_to_cancel">上划取消</string>
     <string name="voice_model_downloading">正在下载模型... %1$d%%</string>
     <string name="voice_model_unzipping">正在解压模型...</string>
     <string name="voice_model_loading">正在加载模型...</string>
@@ -100,6 +102,12 @@
     <string name="clear_chat_title">清空聊天记录</string>
     <string name="clear_chat_message">确定要清空所有聊天记录吗？</string>
     <string name="confirm">确定</string>
+
+    <!-- Battery Optimization Settings -->
+    <string name="battery_optimization_title">电池优化</string>
+    <string name="battery_optimization_desc_on">已关闭 (服务可在后台保活)</string>
+    <string name="battery_optimization_desc_off">开启 (系统可能会杀掉服务)</string>
+    <string name="battery_optimization_allow">允许后台运行</string>
 
     <!-- Update -->
     <string name="update_available_title">发现新版本: %1$s</string>

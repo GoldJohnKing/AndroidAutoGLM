@@ -39,6 +39,7 @@ data class ChatUiState(
     val error: String? = null,
     val missingAccessibilityService: Boolean = false,
     val missingOverlayPermission: Boolean = false,
+    val missingBatteryExemption: Boolean = false,
     val apiKey: String = "",
     val baseUrl: String = "https://open.bigmodel.cn/api/paas/v4", // Official ZhipuAI Endpoint
     val isGemini: Boolean = false,
@@ -190,6 +191,17 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun checkBatteryOptimization(context: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val powerManager = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+            val packageName = context.packageName
+            val isIgnoring = powerManager.isIgnoringBatteryOptimizations(packageName)
+            _uiState.value = _uiState.value.copy(missingBatteryExemption = !isIgnoring)
+        } else {
+            _uiState.value = _uiState.value.copy(missingBatteryExemption = false)
+        }
+    }
+
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
     }
@@ -209,12 +221,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         // _uiState.value = _uiState.value.copy(messages = listOf(UiMessage("assistant", getApplication<Application>().getString(R.string.welcome_message))))
     }
 
-    fun sendMessage(text: String) {
-        Log.d("AutoGLM_Debug", "sendMessage called with text: $text")
+    fun sendMessage(text: String, isContinueCommand: Boolean = false) {
+        Log.d("AutoGLM_Trace", "sendMessage called with text: $text, isContinueCommand: $isContinueCommand")
         if (text.isBlank()) return
         
         if (modelClient == null) {
-            Log.d("AutoGLM_Debug", "modelClient is null, initializing...")
+            Log.d("AutoGLM_Trace", "modelClient is null, initializing...")
             // Try to init with current state if not init
              modelClient = ModelClient(
                  _uiState.value.baseUrl, 
@@ -262,11 +274,33 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 error = null
             )
             
-            apiHistory.clear()
-            // Add System Prompt with Date matching Python logic
-            val dateFormat = SimpleDateFormat("yyyy年MM月dd日 EEEE", Locale.getDefault())
-            val dateStr = getApplication<Application>().getString(R.string.prompt_date_prefix) + dateFormat.format(Date())
-            apiHistory.add(Message("system", dateStr + "\n" + ModelClient.SYSTEM_PROMPT))
+            // Check for continuation
+            val isContinuation = isContinueCommand && apiHistory.isNotEmpty()
+            
+            if (isContinuation) {
+                Log.d("AutoGLM_Debug", "Continuing conversation with history size: ${apiHistory.size}")
+                // Sanitize history: retain text, remove images from past turns to save tokens/bandwidth
+                // The new turn will start with a fresh screenshot of the current state
+                val sanitizedHistory = apiHistory.map { msg ->
+                    if (msg.content is List<*>) {
+                        @Suppress("UNCHECKED_CAST")
+                        val list = msg.content as List<ContentItem>
+                        val textOnly = list.filter { it.type == "text" }
+                        Message(msg.role, textOnly)
+                    } else {
+                        msg
+                    }
+                }
+                apiHistory.clear()
+                apiHistory.addAll(sanitizedHistory)
+            } else {
+                Log.d("AutoGLM_Debug", "Starting new conversation history")
+                apiHistory.clear()
+                // Add System Prompt with Date matching Python logic
+                val dateFormat = SimpleDateFormat("yyyy年MM月dd日 EEEE", Locale.getDefault())
+                val dateStr = getApplication<Application>().getString(R.string.prompt_date_prefix) + dateFormat.format(Date())
+                apiHistory.add(Message("system", dateStr + "\n" + ModelClient.SYSTEM_PROMPT))
+            }
 
             var currentPrompt = text
             var step = 0
@@ -279,7 +313,19 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         stopTask()
                     }
                     service.setTaskRunning(true)
-                    service.goHome()
+                    
+                    // Only go home (minimize) if we are currently in the app
+                    // If we are using floating window over another app, we shouldn't go home
+                    val currentPkg = service.currentApp.value
+                    val myPkg = getApplication<Application>().packageName
+                    Log.d("AutoGLM_Trace", "goHome check: currentPkg=$currentPkg, myPkg=$myPkg, isContinue=$isContinueCommand")
+                    
+                    if (!isContinueCommand && (currentPkg == myPkg || currentPkg == null)) {
+                        Log.d("AutoGLM_Trace", "Executing goHome()")
+                        service.goHome()
+                    } else {
+                        Log.d("AutoGLM_Trace", "Skipping goHome()")
+                    }
                 }
                 delay(1000) // Wait for animation and window to appear
             }

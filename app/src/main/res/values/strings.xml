@@ -8,7 +8,8 @@
     <string name="send_button">Send</string>
     <string name="accessibility_error">Please enable Accessibility Service first</string>
     <string name="enable_action">Enable</string>
-    <string name="overlay_error">Please grant Overlay Permission</string>
+    <string name="overlay_error">Required to show Floating Window over other apps</string>
+    <string name="battery_optimization_error">Required to prevent system from killing the service</string>
     <string name="grant_action">Grant</string>
     <string name="welcome_message">Welcome to AutoGLM\nI can help you operate your phone.\nTry saying: "Help me check the weather"</string>
     
@@ -86,6 +87,7 @@
     <string name="voice_permission_granted">Permission granted, hold button to speak</string>
     <string name="voice_permission_denied">Permission denied</string>
     <string name="voice_release_to_send">Release to Send</string>
+    <string name="voice_release_to_cancel">Swipe up to cancel</string>
     <string name="voice_model_downloading">Downloading Model... %1$d%%</string>
     <string name="voice_model_unzipping">Unzipping Model...</string>
     <string name="voice_model_loading">Loading Model...</string>
@@ -111,4 +113,10 @@
     <string name="check_update_error">Check failed: %1$s</string>
     <string name="version_title">Version</string>
     <string name="new_version_badge">New</string>
+
+    <!-- Battery Optimization Settings -->
+    <string name="battery_optimization_title">Battery Optimization</string>
+    <string name="battery_optimization_desc_on">Ignored (Service stays alive in background)</string>
+    <string name="battery_optimization_desc_off">Enabled (System may kill service)</string>
+    <string name="battery_optimization_allow">Allow Background Run</string>
 </resources>

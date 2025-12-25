@@ -1,5 +1,6 @@
 package com.sidhu.androidautoglm
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -16,11 +17,34 @@ import com.sidhu.androidautoglm.ui.ChatScreen
 import com.sidhu.androidautoglm.ui.ChatViewModel
 import com.sidhu.androidautoglm.ui.SettingsScreen
 import com.sidhu.androidautoglm.ui.MarkdownViewerScreen
+import com.sidhu.androidautoglm.ui.WebViewScreen
+import com.sidhu.androidautoglm.network.UpdateInfo
+import com.sidhu.androidautoglm.utils.UpdateManager
+import android.content.Intent
+import android.net.Uri
+import android.util.Log
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     
     private val viewModel: ChatViewModel by viewModels()
+
+    private val voiceCommandReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == "com.sidhu.androidautoglm.ACTION_VOICE_COMMAND_BROADCAST") {
+                val text = intent.getStringExtra("voice_text")
+                Log.d("AutoGLM_Trace", "BroadcastReceiver received voice command: $text")
+                if (!text.isNullOrBlank()) {
+                    viewModel.sendMessage(text, isContinueCommand = true)
+                    resultCode = android.app.Activity.RESULT_OK
+                }
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Apply saved locale before super.onCreate
@@ -32,6 +56,15 @@ class MainActivity : ComponentActivity() {
         resources.updateConfiguration(config, resources.displayMetrics)
 
         super.onCreate(savedInstanceState)
+        
+        // Register Broadcast Receiver for background voice commands
+        val filter = android.content.IntentFilter("com.sidhu.androidautoglm.ACTION_VOICE_COMMAND_BROADCAST")
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(voiceCommandReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(voiceCommandReceiver, filter)
+        }
+
         setContent {
             MaterialTheme {
                 Surface(
@@ -58,6 +91,23 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         composable("settings") {
+                            // Check battery status when entering settings or resuming
+                            DisposableEffect(Unit) {
+                                val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                                    if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                                        viewModel.checkBatteryOptimization(this@MainActivity)
+                                    }
+                                }
+                                this@MainActivity.lifecycle.addObserver(observer)
+                                onDispose {
+                                    this@MainActivity.lifecycle.removeObserver(observer)
+                                }
+                            }
+
+                            LaunchedEffect(Unit) {
+                                viewModel.checkBatteryOptimization(this@MainActivity)
+                            }
+
                             SettingsScreen(
                                 apiKey = uiState.apiKey,
                                 baseUrl = uiState.baseUrl,
@@ -73,11 +123,30 @@ class MainActivity : ComponentActivity() {
                                     finish()
                                     startActivity(intent)
                                 },
+                                isBatteryOptimizationIgnored = !uiState.missingBatteryExemption,
+                                onRequestBatteryOptimization = {
+                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                                    val isIgnored = !uiState.missingBatteryExemption
+                                    val intent = if (isIgnored) {
+                                        Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                    } else {
+                                        Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                            data = Uri.parse("package:$packageName")
+                                        }
+                                    }
+                                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    startActivity(intent)
+                                }
+                            },
                                 onSave = { newKey, newBaseUrl, newIsGemini, newModelName ->
                                     viewModel.updateSettings(newKey, newBaseUrl, newIsGemini, newModelName)
                                 },
                                 onBack = { navController.popBackStack() },
-                                onOpenDocumentation = { navController.navigate("documentation") }
+                                onOpenDocumentation = { navController.navigate("documentation") },
+                                onOpenUrl = { url ->
+                                    val encodedUrl = URLEncoder.encode(url, StandardCharsets.UTF_8.toString())
+                                    navController.navigate("webview/$encodedUrl")
+                                }
                             )
                         }
                         composable("documentation") {
@@ -86,8 +155,45 @@ class MainActivity : ComponentActivity() {
                                 onBack = { navController.popBackStack() }
                             )
                         }
+                        composable(
+                            route = "webview/{url}",
+                            arguments = listOf(navArgument("url") { type = NavType.StringType })
+                        ) { backStackEntry ->
+                            val url = backStackEntry.arguments?.getString("url") ?: ""
+                            WebViewScreen(
+                                url = url,
+                                onBack = { navController.popBackStack() }
+                            )
+                        }
                     }
                 }
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try {
+            unregisterReceiver(voiceCommandReceiver)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        if (intent?.action == "ACTION_VOICE_SEND") {
+            val text = intent.getStringExtra("voice_text")
+            Log.d("AutoGLM_Trace", "handleIntent received voice command: $text")
+            if (!text.isNullOrBlank()) {
+                viewModel.sendMessage(text, isContinueCommand = true)
+                moveTaskToBack(true)
+                // Clear the intent action so it doesn't trigger again on rotation/recreation if we were to rely on intent state
+                intent.action = "" 
             }
         }
     }

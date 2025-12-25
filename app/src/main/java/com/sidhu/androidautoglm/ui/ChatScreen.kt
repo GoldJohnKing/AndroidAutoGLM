@@ -7,7 +7,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Send
@@ -57,6 +60,14 @@ import androidx.compose.foundation.Image
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
+
 
 fun Context.findActivity(): ComponentActivity? = when (this) {
     is ComponentActivity -> this
@@ -87,183 +98,6 @@ fun LanguageSwitchButton(modifier: Modifier = Modifier) {
     }
 }
 
-@Composable
-fun RecordingIndicator(soundLevel: Float) {
-    // Infinite breathing animation to show activity even if sound level is low
-    val infiniteTransition = rememberInfiniteTransition(label = "breathing")
-    val breathingScale by infiniteTransition.animateFloat(
-        initialValue = 1.0f,
-        targetValue = 1.1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(800, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "breathingScale"
-    )
-
-    // Sound level based scaling (more responsive)
-    // Map -60dB (silence) to -10dB (loud speech) to 0.0 - 1.0
-    // Using a wider range to capture softer voices too
-    val normalizedLevel = ((soundLevel + 60f) / 50f).coerceIn(0f, 1f)
-    
-    // Apply non-linear curve to make small changes more visible
-    // Map 0..1 to 1.0..2.0 range
-    val volumeScale = 1f + (normalizedLevel * normalizedLevel * 1.0f)
-    
-    val animatedVolumeScale by animateFloatAsState(
-        targetValue = volumeScale,
-        animationSpec = tween(durationMillis = 50), // Faster response
-        label = "volumeScale"
-    )
-    
-    // Combine breathing and volume
-    val finalScale = maxOf(breathingScale, animatedVolumeScale)
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.5f))
-            .pointerInput(Unit) {}, // Block touches
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-            modifier = Modifier
-                .size(200.dp) // Slightly larger container
-                .background(Color.DarkGray.copy(alpha = 0.9f), shape = MaterialTheme.shapes.medium)
-                .padding(16.dp)
-        ) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier.size(100.dp)
-            ) {
-                // Outer ripple/volume effect
-                Box(
-                    modifier = Modifier
-                        .size(60.dp)
-                        .graphicsLayer {
-                            scaleX = finalScale
-                            scaleY = finalScale
-                            alpha = 0.4f
-                        }
-                        .background(MaterialTheme.colorScheme.primary, shape = androidx.compose.foundation.shape.CircleShape)
-                )
-                
-                // Inner breathing circle (always active)
-                Box(
-                    modifier = Modifier
-                        .size(60.dp)
-                        .graphicsLayer {
-                            scaleX = breathingScale
-                            scaleY = breathingScale
-                            alpha = 0.6f
-                        }
-                        .background(MaterialTheme.colorScheme.primary, shape = androidx.compose.foundation.shape.CircleShape)
-                )
-                
-                Icon(
-                    imageVector = Icons.Filled.Mic,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(40.dp)
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = stringResource(R.string.voice_listening),
-                color = Color.White,
-                style = MaterialTheme.typography.bodyLarge
-            )
-        }
-    }
-}
-
-@Composable
-fun VoiceReviewOverlay(
-    text: String,
-    onTextChange: (String) -> Unit,
-    onCancel: () -> Unit,
-    onSend: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.5f))
-            .pointerInput(Unit) {}, // Block clicks
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            // Text Bubble
-            Surface(
-                modifier = Modifier
-                    .padding(32.dp)
-                    .fillMaxWidth(),
-                shape = MaterialTheme.shapes.extraLarge,
-                color = Color(0xFF95EC69), // WeChat Green
-                shadowElevation = 8.dp
-            ) {
-                TextField(
-                    value = text,
-                    onValueChange = onTextChange,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(8.dp),
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
-                        disabledContainerColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent
-                    ),
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.Black)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // Action Buttons
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                // Cancel Button
-                IconButton(
-                    onClick = onCancel,
-                    modifier = Modifier
-                        .size(64.dp)
-                        .background(Color.White, shape = androidx.compose.foundation.shape.CircleShape)
-                ) {
-                    Icon(
-                        androidx.compose.material.icons.Icons.Default.Close,
-                        contentDescription = stringResource(R.string.voice_cancel),
-                        tint = Color.Gray,
-                        modifier = Modifier.size(32.dp)
-                    )
-                }
-
-                // Send Button
-                IconButton(
-                    onClick = onSend,
-                    modifier = Modifier
-                        .size(64.dp)
-                        .background(Color.White, shape = androidx.compose.foundation.shape.CircleShape)
-                ) {
-                    Icon(
-                        androidx.compose.material.icons.Icons.Default.Check,
-                        contentDescription = stringResource(R.string.send_button),
-                        tint = Color(0xFF95EC69), // WeChat Green
-                        modifier = Modifier.size(32.dp)
-                    )
-                }
-            }
-        }
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -287,6 +121,7 @@ fun ChatScreen(
     val isListening by speechRecognizerManager.isListening.collectAsState()
     val soundLevel by speechRecognizerManager.soundLevel.collectAsState()
     var isVoiceMode by remember { mutableStateOf(false) } // Toggle between Text and Voice mode
+    var isCancelling by remember { mutableStateOf(false) }
 
     // Sherpa Model Initialization
     val modelState by SherpaModelManager.modelState.collectAsState()
@@ -325,6 +160,7 @@ fun ChatScreen(
             if (event == Lifecycle.Event.ON_RESUME) {
                 viewModel.checkServiceStatus()
                 viewModel.checkOverlayPermission(context)
+                viewModel.checkBatteryOptimization(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -337,6 +173,7 @@ fun ChatScreen(
     LaunchedEffect(Unit) {
         viewModel.checkServiceStatus()
         viewModel.checkOverlayPermission(context)
+        viewModel.checkBatteryOptimization(context)
     }
 
     Box(
@@ -471,6 +308,25 @@ fun ChatScreen(
 
                     if (isVoiceMode) {
                         // Hold to Talk Button
+                        val buttonText = when {
+                            isCancelling -> stringResource(R.string.voice_release_to_cancel)
+                            isListening -> stringResource(R.string.voice_release_to_send)
+                            modelState is SherpaModelManager.ModelState.Loading -> stringResource(R.string.voice_model_loading)
+                            modelState is SherpaModelManager.ModelState.Error -> stringResource(R.string.voice_model_load_failed)
+                            !isModelReady -> stringResource(R.string.voice_model_initializing)
+                            else -> stringResource(R.string.voice_hold_to_speak)
+                        }
+
+                        val vibrator = remember {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+                                vibratorManager.defaultVibrator
+                            } else {
+                                @Suppress("DEPRECATION")
+                                context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                            }
+                        }
+
                         Box(
                             modifier = Modifier
                                 .weight(1f)
@@ -479,6 +335,10 @@ fun ChatScreen(
                                     color = if (isListening) Color.LightGray else Color.White,
                                     shape = MaterialTheme.shapes.medium
                                 )
+                                .semantics(mergeDescendants = true) {
+                                    role = Role.Button
+                                    contentDescription = buttonText
+                                }
                                 .pointerInput(isModelReady, modelState) {
                                     if (!isModelReady || modelState is SherpaModelManager.ModelState.Error || modelState is SherpaModelManager.ModelState.NotInitialized) {
                                         detectTapGestures(
@@ -494,64 +354,75 @@ fun ChatScreen(
                                         return@pointerInput
                                     }
                                     
-                                    detectTapGestures(
-                                        onPress = {
-                                            // Check permission first
-                                            if (androidx.core.content.ContextCompat.checkSelfPermission(
-                                                    context,
-                                                    android.Manifest.permission.RECORD_AUDIO
-                                                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                                            ) {
-                                                try {
-                                                    // Ensure running on Main thread for SpeechRecognizer
-                                                    withContext(Dispatchers.Main) {
-                                                        // Clear previous result
-                                                        voiceResultText = ""
-                                                        
-                                                        speechRecognizerManager.startListening(
-                                                            onResultCallback = { result ->
-                                                                voiceResultText = result
-                                                            },
-                                                            onErrorCallback = { error ->
-                                                                Toast.makeText(context, error, Toast.LENGTH_SHORT).show()
-                                                            }
-                                                        )
+                                    awaitEachGesture {
+                                        val down = awaitFirstDown(requireUnconsumed = false)
+                                        
+                                        if (androidx.core.content.ContextCompat.checkSelfPermission(
+                                                context,
+                                                android.Manifest.permission.RECORD_AUDIO
+                                            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                                        ) {
+                                            val startJob = scope.launch(Dispatchers.Main) {
+                                                voiceResultText = ""
+                                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                                    vibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
+                                                } else {
+                                                    @Suppress("DEPRECATION")
+                                                    vibrator.vibrate(50)
+                                                }
+                                                speechRecognizerManager.startListening(
+                                                    onResultCallback = { result -> voiceResultText = result },
+                                                    onErrorCallback = { error -> Toast.makeText(context, error, Toast.LENGTH_SHORT).show() }
+                                                )
+                                            }
+
+                                            isCancelling = false
+                                            var cancelled = false
+                                            
+                                            try {
+                                                while (true) {
+                                                    val event = awaitPointerEvent()
+                                                    val change = event.changes.firstOrNull { it.id == down.id }
+                                                    if (change == null || !change.pressed) break
+                                                    
+                                                    val threshold = 50.dp.toPx()
+                                                    if (change.position.y < -threshold) {
+                                                        if (!isCancelling) isCancelling = true
+                                                    } else {
+                                                        if (isCancelling) isCancelling = false
                                                     }
-                                                    
-                                                    // Wait for release
-                                                    tryAwaitRelease()
-                                                    
-                                                    // Stop listening
-                                                    speechRecognizerManager.stopListening()
-                                                    
-                                                    // Show review overlay if text captured
-                                                    if (voiceResultText.isNotBlank()) {
-                                                        showVoiceReview = true
-                                                    }
-                                                } catch (e: Exception) {
-                                                    e.printStackTrace()
+                                                }
+                                            } catch (e: Exception) {
+                                                cancelled = true
+                                            }
+                                            
+                                            scope.launch(Dispatchers.Main) {
+                                                startJob.join()
+                                                if (cancelled || isCancelling) {
                                                     speechRecognizerManager.cancel()
+                                                } else {
+                                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                                        vibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
+                                                    } else {
+                                                        @Suppress("DEPRECATION")
+                                                        vibrator.vibrate(50)
+                                                    }
+                                                    speechRecognizerManager.stopListening()
+                                                    if (voiceResultText.isNotBlank()) showVoiceReview = true
                                                 }
-                                            } else {
-                                                withContext(Dispatchers.Main) {
-                                                    permissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
-                                                }
+                                                isCancelling = false
+                                            }
+                                        } else {
+                                            scope.launch(Dispatchers.Main) {
+                                                permissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
                                             }
                                         }
-                                    )
+                                    }
                                 },
                             contentAlignment = Alignment.Center
                         ) {
-                            val text = when {
-                                isListening -> stringResource(R.string.voice_release_to_send)
-                                modelState is SherpaModelManager.ModelState.Loading -> stringResource(R.string.voice_model_loading)
-                                modelState is SherpaModelManager.ModelState.Error -> stringResource(R.string.voice_model_load_failed)
-                                !isModelReady -> stringResource(R.string.voice_model_initializing)
-                                else -> stringResource(R.string.voice_hold_to_speak)
-                            }
-                            
                             Text(
-                                text = text,
+                                text = buttonText,
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = Color.Black
                             )

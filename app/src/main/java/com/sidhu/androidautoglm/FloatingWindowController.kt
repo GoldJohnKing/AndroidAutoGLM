@@ -38,6 +38,26 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
 
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import com.sidhu.androidautoglm.utils.SpeechRecognizerManager
+import com.sidhu.androidautoglm.utils.SherpaModelManager
+import com.sidhu.androidautoglm.ui.RecordingIndicator
+import com.sidhu.androidautoglm.ui.VoiceReviewOverlay
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
+import androidx.compose.foundation.background
+import androidx.core.content.ContextCompat
+import android.Manifest
+import android.content.pm.PackageManager
+import android.widget.Toast
+
 class FloatingWindowController(private val context: Context) : LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
 
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -49,7 +69,7 @@ class FloatingWindowController(private val context: Context) : LifecycleOwner, V
     private var _statusText by mutableStateOf("")
     private var _isTaskRunning by mutableStateOf(true)
     private var _onStopClick: (() -> Unit)? = null
-
+    
     // Lifecycle components required for Compose
     private val lifecycleRegistry = LifecycleRegistry(this)
     private val savedStateRegistryController = SavedStateRegistryController.create(this)
@@ -59,6 +79,55 @@ class FloatingWindowController(private val context: Context) : LifecycleOwner, V
         _statusText = context.getString(R.string.fw_ready)
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
+    }
+
+    private var overlayView: ComposeView? = null
+
+    fun showOverlay(focusable: Boolean = false, content: @Composable () -> Unit) {
+        if (overlayView != null) hideOverlay()
+        
+        val flags = if (focusable) {
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+        } else {
+             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+        }
+
+        val overlayParams = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            flags,
+            PixelFormat.TRANSLUCENT
+        )
+        
+        overlayView = ComposeView(context).apply {
+            setViewTreeLifecycleOwner(this@FloatingWindowController)
+            setViewTreeViewModelStoreOwner(this@FloatingWindowController)
+            setViewTreeSavedStateRegistryOwner(this@FloatingWindowController)
+            setContent {
+                MaterialTheme {
+                     content()
+                }
+            }
+        }
+        
+        try {
+            windowManager.addView(overlayView, overlayParams)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+    
+    fun hideOverlay() {
+        if (overlayView == null) return
+        try {
+            windowManager.removeView(overlayView)
+            overlayView = null
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     fun show(onStop: () -> Unit) {
@@ -113,6 +182,51 @@ class FloatingWindowController(private val context: Context) : LifecycleOwner, V
                             } catch (e: Exception) {
                                 e.printStackTrace()
                             }
+                        }
+                    },
+                    onShowOverlay = { focusable, content ->
+                        showOverlay(focusable, content)
+                    },
+                    onHideOverlay = {
+                        hideOverlay()
+                    },
+                    onSendVoice = { text ->
+                        try {
+                            Log.d("AutoGLM_Trace", "FloatingWindow: Sending voice command broadcast: $text")
+                            // Try to send broadcast first to avoid bringing Activity to front
+                            val broadcastIntent = Intent("com.sidhu.androidautoglm.ACTION_VOICE_COMMAND_BROADCAST")
+                            broadcastIntent.putExtra("voice_text", text)
+                            broadcastIntent.setPackage(context.packageName)
+                            
+                            context.sendOrderedBroadcast(
+                                broadcastIntent,
+                                null,
+                                object : android.content.BroadcastReceiver() {
+                                    override fun onReceive(ctx: Context?, intent: Intent?) {
+                                        if (resultCode != android.app.Activity.RESULT_OK) {
+                                            // Fallback: Start Activity if broadcast was not handled (Activity dead)
+                                            try {
+                                                val activityIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+                                                if (activityIntent != null) {
+                                                    activityIntent.action = "ACTION_VOICE_SEND"
+                                                    activityIntent.putExtra("voice_text", text)
+                                                    activityIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                                                    context.startActivity(activityIntent)
+                                                    hide()
+                                                }
+                                            } catch (e: Exception) {
+                                                e.printStackTrace()
+                                            }
+                                        }
+                                    }
+                                },
+                                null,
+                                android.app.Activity.RESULT_CANCELED,
+                                null,
+                                null
+                            )
+                        } catch (e: Exception) {
+                            e.printStackTrace()
                         }
                     },
                     onDrag = { x, y ->
@@ -233,8 +347,74 @@ fun FloatingWindowContent(
     status: String,
     isTaskRunning: Boolean,
     onAction: () -> Unit,
+    onShowOverlay: (Boolean, @Composable () -> Unit) -> Unit,
+    onHideOverlay: () -> Unit,
+    onSendVoice: (String) -> Unit,
     onDrag: (Float, Float) -> Unit
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    
+    // Voice State
+    var voiceResultText by remember { mutableStateOf("") }
+    var showVoiceReview by remember { mutableStateOf(false) }
+    var isCancelling by remember { mutableStateOf(false) }
+    
+    // Speech Recognition
+    val speechRecognizerManager = remember { SpeechRecognizerManager(context) }
+    val isListening by speechRecognizerManager.isListening.collectAsState()
+    val soundLevel by speechRecognizerManager.soundLevel.collectAsState()
+    
+    val modelState by SherpaModelManager.modelState.collectAsState()
+    val isModelReady = modelState is SherpaModelManager.ModelState.Ready
+    
+    // Ensure model is initialized
+    LaunchedEffect(Unit) {
+         if (modelState is SherpaModelManager.ModelState.NotInitialized) {
+            SherpaModelManager.initModel(context)
+        }
+    }
+    
+    DisposableEffect(Unit) {
+        onDispose {
+            speechRecognizerManager.destroy()
+        }
+    }
+
+    // Effect to manage overlay based on state
+    LaunchedEffect(isListening, showVoiceReview) {
+        if (showVoiceReview) {
+            onShowOverlay(true) { // Focusable
+                 VoiceReviewOverlay(
+                    text = voiceResultText,
+                    onTextChange = { voiceResultText = it },
+                    onCancel = {
+                        showVoiceReview = false
+                        voiceResultText = ""
+                        onHideOverlay()
+                    },
+                    onSend = {
+                        if (voiceResultText.isNotBlank()) {
+                            onSendVoice(voiceResultText)
+                        }
+                        showVoiceReview = false
+                        voiceResultText = ""
+                        onHideOverlay()
+                    }
+                )
+            }
+        } else if (isListening) {
+            onShowOverlay(false) { // Not focusable, but full screen for visual
+                 RecordingIndicator(soundLevel = soundLevel)
+            }
+        } else {
+            // If neither listening nor reviewing, hide overlay
+            // But be careful not to hide if we are just transitioning
+            // Logic: if both false, hide.
+            onHideOverlay()
+        }
+    }
+
     MaterialTheme {
         Surface(
             modifier = Modifier
@@ -282,24 +462,155 @@ fun FloatingWindowContent(
                     )
                 }
                 
-                Button(
-                    onClick = onAction,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isTaskRunning) Color(0xFFFFEBEE) else Color(0xFFE3F2FD),
-                        contentColor = if (isTaskRunning) Color.Red else Color(0xFF2196F3)
-                    ),
-                    shape = RoundedCornerShape(50),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                ) {
-                    Icon(
-                        if (isTaskRunning) Icons.Default.Stop else Icons.Default.OpenInNew, 
-                        contentDescription = null, 
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(if (isTaskRunning) stringResource(R.string.fw_stop) else stringResource(R.string.fw_return_app))
+                // Right side action button
+                if (isTaskRunning) {
+                     Button(
+                        onClick = onAction,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFFFEBEE),
+                            contentColor = Color.Red
+                        ),
+                        shape = RoundedCornerShape(50),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Stop, 
+                            contentDescription = null, 
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(stringResource(R.string.fw_stop))
+                    }
+                } else {
+                    // Not running: Show Mic Button AND Return Button (maybe?)
+                    // Or just Mic button and if clicked -> text input?
+                    // User requested "Send new task via voice".
+                    
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        // Mic Button (Hold to talk)
+                         val vibrator = remember {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+                                vibratorManager.defaultVibrator
+                            } else {
+                                @Suppress("DEPRECATION")
+                                context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                            }
+                        }
+                        
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(Color(0xFFE3F2FD), androidx.compose.foundation.shape.CircleShape)
+                                .pointerInput(isModelReady, modelState) {
+                                     if (!isModelReady || modelState is SherpaModelManager.ModelState.Error || modelState is SherpaModelManager.ModelState.NotInitialized) {
+                                        detectTapGestures(
+                                            onTap = {
+                                                if (modelState is SherpaModelManager.ModelState.NotInitialized || modelState is SherpaModelManager.ModelState.Error) {
+                                                    scope.launch {
+                                                        SherpaModelManager.initModel(context)
+                                                    }
+                                                }
+                                            }
+                                        )
+                                        return@pointerInput
+                                    }
+                                    
+                                    awaitEachGesture {
+                                        val down = awaitFirstDown(requireUnconsumed = false)
+                                        
+                                        // Start Listening
+                                        val startJob = scope.launch(Dispatchers.Main) {
+                                            voiceResultText = ""
+                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                                vibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
+                                            } else {
+                                                @Suppress("DEPRECATION")
+                                                vibrator.vibrate(50)
+                                            }
+                                            speechRecognizerManager.startListening(
+                                                onResultCallback = { result -> voiceResultText = result },
+                                                onErrorCallback = { }
+                                            )
+                                        }
+
+                                        isCancelling = false
+                                        var cancelled = false
+                                        
+                                        try {
+                                            while (true) {
+                                                val event = awaitPointerEvent()
+                                                val change = event.changes.firstOrNull { it.id == down.id }
+                                                if (change == null || !change.pressed) break
+                                                
+                                                val threshold = 50.dp.toPx()
+                                                // If dragging up, cancel
+                                                // Note: Window Y decreases as we go up.
+                                                // change.position is relative to the element.
+                                                // Dragging UP means negative Y.
+                                                if (change.position.y < -threshold) {
+                                                    if (!isCancelling) isCancelling = true
+                                                } else {
+                                                    if (isCancelling) isCancelling = false
+                                                }
+                                            }
+                                        } catch (e: Exception) {
+                                            cancelled = true
+                                        }
+                                        
+                                        // Stopped Listening
+                                        scope.launch(Dispatchers.Main) {
+                                            startJob.join()
+                                            if (cancelled || isCancelling) {
+                                                speechRecognizerManager.cancel()
+                                            } else {
+                                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                                    vibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
+                                                } else {
+                                                    @Suppress("DEPRECATION")
+                                                    vibrator.vibrate(50)
+                                                }
+                                                speechRecognizerManager.stopListening()
+                                                if (voiceResultText.isNotBlank()) {
+                                                    showVoiceReview = true
+                                                }
+                                            }
+                                            isCancelling = false
+                                        }
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                             Icon(
+                                Icons.Default.Mic, 
+                                contentDescription = null, 
+                                tint = Color(0xFF2196F3),
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+
+                        // Return Button
+                        Button(
+                            onClick = onAction,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFE3F2FD),
+                                contentColor = Color(0xFF2196F3)
+                            ),
+                            shape = RoundedCornerShape(50),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.OpenInNew, 
+                                contentDescription = null, 
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(stringResource(R.string.fw_return_app))
+                        }
+                    }
                 }
             }
         }
     }
 }
+

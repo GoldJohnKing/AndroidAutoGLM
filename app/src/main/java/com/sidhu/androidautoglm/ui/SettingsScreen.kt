@@ -30,8 +30,6 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import com.sidhu.androidautoglm.network.UpdateInfo
-import com.sidhu.androidautoglm.ui.UpdateDialog
-import com.sidhu.androidautoglm.utils.UpdateManager
 import com.sidhu.androidautoglm.BuildConfig
 import com.sidhu.androidautoglm.R
 
@@ -43,11 +41,15 @@ fun SettingsScreen(
     baseUrl: String,
     isGemini: Boolean,
     modelName: String,
+    appUpdateInfo: UpdateInfo?,
     currentLanguage: String,
     onLanguageChange: (String) -> Unit,
+    isBatteryOptimizationIgnored: Boolean,
+    onRequestBatteryOptimization: () -> Unit,
     onSave: (String, String, Boolean, String) -> Unit,
     onBack: () -> Unit,
-    onOpenDocumentation: () -> Unit
+    onOpenDocumentation: () -> Unit,
+    onOpenUrl: (String) -> Unit
 ) {
     val isDefaultKey = apiKey == BuildConfig.DEFAULT_API_KEY && BuildConfig.DEFAULT_API_KEY.isNotEmpty()
 
@@ -66,21 +68,7 @@ fun SettingsScreen(
 
     // Update Logic
     val context = LocalContext.current
-    var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) } // For showing dialog
-    var manualUpdateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
-    var isChecking by remember { mutableStateOf(false) }
-
-    if (updateInfo != null) {
-        UpdateDialog(
-            updateInfo = updateInfo!!,
-            onConfirm = {
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(updateInfo!!.downloadUrl))
-                context.startActivity(intent)
-            },
-            onDismiss = { updateInfo = null }
-        )
-    }
-
+    
     Scaffold(
         topBar = {
             TopAppBar(
@@ -191,53 +179,98 @@ fun SettingsScreen(
                     }
                 }
 
-                // Update Check Card
+                // Battery Optimization Card
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onRequestBatteryOptimization),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .padding(16.dp)
+                            .fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.battery_optimization_title),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            
+                            Text(
+                                text = if (isBatteryOptimizationIgnored) 
+                                    stringResource(R.string.battery_optimization_desc_on) 
+                                else 
+                                    stringResource(R.string.battery_optimization_desc_off),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (isBatteryOptimizationIgnored) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            if (!isBatteryOptimizationIgnored) {
+                                Button(
+                                    onClick = onRequestBatteryOptimization,
+                                    modifier = Modifier.padding(top = 8.dp)
+                                ) {
+                                    Text(stringResource(R.string.battery_optimization_allow))
+                                }
+                            }
+                        }
+                        
+                        if (isBatteryOptimizationIgnored) {
+                            Icon(
+                                imageVector = Icons.Default.OpenInNew,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+
+                // Version Info Card
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = appUpdateInfo != null) {
+                                if (appUpdateInfo != null) {
+                                    val url = if (!appUpdateInfo.releasePage.isNullOrEmpty()) {
+                                        appUpdateInfo.releasePage
+                                    } else {
+                                        appUpdateInfo.downloadUrl
+                                    }
+                                    onOpenUrl(url)
+                                }
+                            }
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = stringResource(R.string.check_update),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary
+                            text = stringResource(R.string.version_title),
+                            style = MaterialTheme.typography.bodyLarge
                         )
                         
-                        Button(
-                            onClick = {
-                                isChecking = true
-                                Toast.makeText(context, context.getString(R.string.checking_update), Toast.LENGTH_SHORT).show()
-                                UpdateManager.checkUpdate(
-                                    context = context,
-                                    onUpdateAvailable = { info ->
-                                        isChecking = false
-                                        updateInfo = info
-                                    },
-                                    onNoUpdate = {
-                                        isChecking = false
-                                        Toast.makeText(context, context.getString(R.string.no_update), Toast.LENGTH_SHORT).show()
-                                    },
-                                    onError = { error ->
-                                        isChecking = false
-                                        Toast.makeText(context, context.getString(R.string.check_update_error, error), Toast.LENGTH_SHORT).show()
-                                    }
-                                )
-                            },
-                            enabled = !isChecking,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                             if (isChecking) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(20.dp),
-                                    color = MaterialTheme.colorScheme.onPrimary,
-                                    strokeWidth = 2.dp
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.weight(1f))
+                        
+                        Text(
+                            text = BuildConfig.VERSION_NAME,
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        
+                        if (appUpdateInfo != null) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Badge(containerColor = Color.Red) {
+                                Text(stringResource(R.string.new_version_badge), color = Color.White)
                             }
-                            Text(stringResource(R.string.check_update))
                         }
                     }
                 }
@@ -513,10 +546,14 @@ fun SettingsScreenPreview() {
         baseUrl = "https://open.bigmodel.cn/api/paas/v4",
         isGemini = false,
         modelName = "autoglm-phone",
+        appUpdateInfo = null,
         currentLanguage = "en",
         onLanguageChange = {},
+        isBatteryOptimizationIgnored = false,
+        onRequestBatteryOptimization = {},
         onSave = { _, _, _, _ -> },
         onBack = {},
-        onOpenDocumentation = {}
+        onOpenDocumentation = {},
+        onOpenUrl = {}
     )
 }

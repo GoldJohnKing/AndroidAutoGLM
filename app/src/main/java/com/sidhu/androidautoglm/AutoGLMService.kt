@@ -91,7 +91,11 @@ class AutoGLMService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         event?.packageName?.let {
-            _currentApp.value = it.toString()
+            val pkg = it.toString()
+            if (_currentApp.value != pkg) {
+                Log.d("AutoGLM_Trace", "Current App changed to: $pkg")
+                _currentApp.value = pkg
+            }
         }
     }
 
