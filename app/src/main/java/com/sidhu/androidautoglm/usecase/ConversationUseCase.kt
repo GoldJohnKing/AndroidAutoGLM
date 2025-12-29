@@ -1,5 +1,7 @@
 package com.sidhu.androidautoglm.usecase
 
+import android.content.Context
+import com.sidhu.androidautoglm.R
 import com.sidhu.androidautoglm.data.TaskEndState
 import com.sidhu.androidautoglm.data.entity.Conversation
 import com.sidhu.androidautoglm.data.repository.ConversationRepository
@@ -17,7 +19,8 @@ import kotlinx.coroutines.withContext
  * handling all conversation-related business operations.
  */
 class ConversationUseCase(
-    private val repository: ConversationRepository
+    private val repository: ConversationRepository,
+    private val context: Context
 ) {
 
     /**
@@ -36,7 +39,7 @@ class ConversationUseCase(
      * @return The ID of the newly created conversation
      */
     suspend fun createConversation(): Long = withContext(Dispatchers.IO) {
-        repository.createConversation(title = "新对话")
+        repository.createConversation(title = context.getString(R.string.new_conversation))
     }
 
     /**

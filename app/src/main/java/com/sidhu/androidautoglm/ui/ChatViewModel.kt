@@ -173,7 +173,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             imageStorage = imageStorage
         )
     }
-    private val conversationUseCase by lazy { ConversationUseCase(repository) }
+    private val conversationUseCase by lazy { ConversationUseCase(repository, getApplication()) }
     private val preferencesManager by lazy {
         com.sidhu.androidautoglm.data.preferences.PreferencesManager(getApplication())
     }
@@ -880,7 +880,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
                 if (messagesWithImages.isEmpty()) {
                     Log.e("ChatViewModel", "No messages to continue in conversation: $conversationId")
-                    postError("没有可继续的消息记录")
+                    postError(getApplication<Application>().getString(R.string.no_messages_to_continue_error))
                     return@launch
                 }
 

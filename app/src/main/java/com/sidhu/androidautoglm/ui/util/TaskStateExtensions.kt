@@ -1,5 +1,7 @@
 package com.sidhu.androidautoglm.ui.util
 
+import android.content.Context
+import com.sidhu.androidautoglm.R
 import com.sidhu.androidautoglm.data.TaskEndState
 
 /**
@@ -9,12 +11,12 @@ import com.sidhu.androidautoglm.data.TaskEndState
 /**
  * Returns the display text for a task state.
  */
-fun TaskEndState.displayText(): String {
+fun TaskEndState.displayText(context: Context): String {
     return when (this) {
-        TaskEndState.COMPLETED -> "已完成"
-        TaskEndState.MAX_STEPS_REACHED -> "达到最大步数"
-        TaskEndState.USER_STOPPED -> "已暂停"
-        TaskEndState.ERROR -> "出错"
+        TaskEndState.COMPLETED -> context.getString(R.string.task_state_completed)
+        TaskEndState.MAX_STEPS_REACHED -> context.getString(R.string.task_state_max_steps)
+        TaskEndState.USER_STOPPED -> context.getString(R.string.task_state_user_stopped)
+        TaskEndState.ERROR -> context.getString(R.string.task_state_error)
     }
 }
 
@@ -22,8 +24,8 @@ fun TaskEndState.displayText(): String {
  * Returns the display text for a nullable task state.
  * Returns empty string if the state is null.
  */
-fun TaskEndState?.displayTextOrNull(): String {
-    return this?.displayText() ?: ""
+fun TaskEndState?.displayTextOrNull(context: Context): String {
+    return this?.displayText(context) ?: ""
 }
 
 /**

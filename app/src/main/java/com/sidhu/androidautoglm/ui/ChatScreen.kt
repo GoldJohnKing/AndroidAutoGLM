@@ -250,7 +250,7 @@ fun ChatScreen(
                                     color = Color(android.graphics.Color.parseColor(state.displayColor()))
                                 ) {
                                     Text(
-                                        state.displayText(),
+                                        state.displayText(context),
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = Color.White
@@ -261,7 +261,7 @@ fun ChatScreen(
                         // Step count display
                         if (uiState.currentConversation != null && uiState.currentConversation!!.lastStepCount > 0) {
                             Text(
-                                text = "步骤: ${uiState.currentConversation!!.lastStepCount}",
+                                text = stringResource(R.string.step_count_label) + uiState.currentConversation!!.lastStepCount,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color.Gray
                             )
@@ -274,8 +274,8 @@ fun ChatScreen(
                     if (showDeleteDialog) {
                         AlertDialog(
                             onDismissRequest = { showDeleteDialog = false },
-                            title = { Text("删除会话") },
-                            text = { Text("确定要删除当前会话吗？此操作无法撤销。") },
+                            title = { Text(stringResource(R.string.delete_current_conversation_title)) },
+                            text = { Text(stringResource(R.string.delete_current_conversation_message)) },
                             confirmButton = {
                                 TextButton(
                                     onClick = {
@@ -288,7 +288,7 @@ fun ChatScreen(
                                         contentColor = MaterialTheme.colorScheme.error
                                     )
                                 ) {
-                                    Text("删除")
+                                    Text(stringResource(R.string.delete_conversation))
                                 }
                             },
                             dismissButton = {
@@ -305,7 +305,7 @@ fun ChatScreen(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Delete,
-                            contentDescription = "删除会话",
+                            contentDescription = stringResource(R.string.delete_current_conversation_title),
                             tint = if (uiState.isTaskRunning) Color.Gray.copy(alpha = 0.5f) else Color.Gray
                         )
                     }
@@ -535,7 +535,7 @@ fun ChatScreen(
                                     MaterialTheme.colorScheme.primary else Color.Gray
                             )
                         ) {
-                            Text("继续", color = Color.White)
+                            Text(stringResource(R.string.continue_task), color = Color.White)
                         }
                     } else {
                         // Send Button (normal task)
@@ -770,7 +770,7 @@ fun MessageItem(
                 if (isUser && message.image != null) {
                     androidx.compose.foundation.Image(
                         bitmap = message.image!!.asImageBitmap(),
-                        contentDescription = "Screenshot",
+                        contentDescription = stringResource(R.string.screenshot_cd),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(200.dp)
@@ -799,13 +799,13 @@ fun MessageItem(
             ) {
                 Icon(
                     imageVector = Icons.Default.Image,
-                    contentDescription = "View Image",
+                    contentDescription = stringResource(R.string.view_image_cd),
                     modifier = Modifier.size(18.dp),
                     tint = Color.White
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = "查看图片",
+                    text = stringResource(R.string.view_image_button),
                     color = Color.White,
                     style = MaterialTheme.typography.bodySmall
                 )
@@ -846,7 +846,7 @@ fun FullscreenImageOverlay(
         ) {
             Icon(
                 Icons.Default.Close,
-                contentDescription = "Close",
+                contentDescription = stringResource(R.string.close_cd),
                 tint = Color.White
             )
         }
@@ -854,7 +854,7 @@ fun FullscreenImageOverlay(
         // Image in center
         androidx.compose.foundation.Image(
             bitmap = imageBitmap.asImageBitmap(),
-            contentDescription = "Fullscreen Screenshot",
+            contentDescription = stringResource(R.string.fullscreen_screenshot_cd),
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.Center),

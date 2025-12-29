@@ -4,6 +4,7 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.sidhu.androidautoglm.R
 import com.sidhu.androidautoglm.data.AppDatabase
 import com.sidhu.androidautoglm.data.ImageStorage
 import com.sidhu.androidautoglm.data.TaskEndState
@@ -103,7 +104,7 @@ class ConversationListViewModel(application: Application) : AndroidViewModel(app
      */
     fun renameConversation(conversationId: Long, newTitle: String) {
         if (newTitle.isBlank()) {
-            _uiState.value = _uiState.value.copy(error = "标题不能为空")
+            _uiState.value = _uiState.value.copy(error = getApplication<Application>().getString(R.string.conversation_title_empty_error))
             return
         }
 

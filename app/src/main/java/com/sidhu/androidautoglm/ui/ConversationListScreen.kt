@@ -18,6 +18,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.sidhu.androidautoglm.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -39,6 +42,7 @@ fun ConversationListScreen(
     onBack: () -> Unit,
     viewModel: ConversationListViewModel = viewModel()
 ) {
+    val context = LocalContext.current
     val conversations by viewModel.conversations.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     var showDeleteDialog by remember { mutableStateOf<Conversation?>(null) }
@@ -84,12 +88,12 @@ fun ConversationListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("会话列表") },
+                title = { Text(stringResource(R.string.conversation_list_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
                             imageVector = Icons.Filled.ArrowBack,
-                            contentDescription = "返回"
+                            contentDescription = stringResource(R.string.back)
                         )
                     }
                 },
@@ -98,7 +102,7 @@ fun ConversationListScreen(
                         IconButton(onClick = { showDeleteAllDialog = true }) {
                             Icon(
                                 imageVector = Icons.Filled.DeleteSweep,
-                                contentDescription = "清空所有会话",
+                                contentDescription = stringResource(R.string.clear_all_conversations),
                                 tint = MaterialTheme.colorScheme.error
                             )
                         }
@@ -152,11 +156,11 @@ fun ConversationListScreen(
                                     tint = MaterialTheme.colorScheme.primary
                                 )
                                 Text(
-                                    "还没有对话",
+                                    stringResource(R.string.empty_conversations_title),
                                     style = MaterialTheme.typography.titleLarge
                                 )
                                 Text(
-                                    "点击此处开始新对话",
+                                    stringResource(R.string.start_new_conversation_hint),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -193,7 +197,7 @@ fun ConversationListScreen(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    "新对话",
+                                    stringResource(R.string.new_conversation),
                                     style = MaterialTheme.typography.titleMedium,
                                     color = MaterialTheme.colorScheme.primary
                                 )
@@ -213,7 +217,7 @@ fun ConversationListScreen(
                                 ConversationListItem(
                                     conversation = conversation,
                                     timeText = viewModel.formatTimestamp(conversation.updatedAt),
-                                    taskStateText = conversation.lastTaskState.displayTextOrNull(),
+                                    taskStateText = conversation.lastTaskState.displayTextOrNull(context),
                                     taskStateColor = conversation.lastTaskState.displayColorOrNull(),
                                     onClick = { onConversationSelected(conversation.id) },
                                     onLongClick = { showRenameDialog = conversation },
@@ -233,7 +237,7 @@ fun ConversationListScreen(
                         .padding(16.dp),
                     action = {
                         TextButton(onClick = { viewModel.clearError() }) {
-                            Text("关闭")
+                            Text(stringResource(R.string.close))
                         }
                     }
                 ) {
@@ -325,7 +329,7 @@ fun ConversationListItem(
                     ) {
                         Icon(
                             Icons.Default.Edit,
-                            contentDescription = "重命名",
+                            contentDescription = stringResource(R.string.rename_conversation),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(20.dp)
                         )
@@ -337,7 +341,7 @@ fun ConversationListItem(
                     ) {
                         Icon(
                             Icons.Default.Delete,
-                            contentDescription = "删除",
+                            contentDescription = stringResource(R.string.delete_conversation),
                             tint = MaterialTheme.colorScheme.error,
                             modifier = Modifier.size(20.dp)
                         )
@@ -359,8 +363,8 @@ fun DeleteConversationDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("删除会话") },
-        text = { Text("确定要删除会话吗？此操作无法撤销。") },
+        title = { Text(stringResource(R.string.delete_conversation)) },
+        text = { Text(stringResource(R.string.delete_conversation_message, conversation.title)) },
         confirmButton = {
             TextButton(
                 onClick = onConfirm,
@@ -368,12 +372,12 @@ fun DeleteConversationDialog(
                     contentColor = MaterialTheme.colorScheme.error
                 )
             ) {
-                Text("删除")
+                Text(stringResource(R.string.delete_conversation))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text(stringResource(R.string.cancel))
             }
         }
     )
@@ -389,8 +393,8 @@ fun DeleteAllConversationsDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("清空所有会话") },
-        text = { Text("确定要删除所有会话吗？此操作无法撤销。") },
+        title = { Text(stringResource(R.string.clear_all_conversations_title)) },
+        text = { Text(stringResource(R.string.clear_all_conversations_message)) },
         confirmButton = {
             TextButton(
                 onClick = onConfirm,
@@ -398,12 +402,12 @@ fun DeleteAllConversationsDialog(
                     contentColor = MaterialTheme.colorScheme.error
                 )
             ) {
-                Text("删除")
+                Text(stringResource(R.string.delete_conversation))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text(stringResource(R.string.cancel))
             }
         }
     )
@@ -424,7 +428,7 @@ fun RenameConversationDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("重命名会话") },
+        title = { Text(stringResource(R.string.rename_conversation)) },
         text = {
             OutlinedTextField(
                 value = text,
@@ -432,14 +436,14 @@ fun RenameConversationDialog(
                     text = it
                     isError = it.isBlank()
                 },
-                label = { Text("会话标题") },
+                label = { Text(stringResource(R.string.conversation_title_hint)) },
                 isError = isError,
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
             if (isError) {
                 Text(
-                    "标题不能为空",
+                    stringResource(R.string.conversation_title_empty_error),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error
                 )
@@ -454,12 +458,12 @@ fun RenameConversationDialog(
                 },
                 enabled = text.isNotBlank()
             ) {
-                Text("确定")
+                Text(stringResource(R.string.confirm))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text(stringResource(R.string.cancel))
             }
         }
     )
