@@ -123,4 +123,29 @@
     <string name="battery_optimization_desc_on">Ignored (Service stays alive in background)</string>
     <string name="battery_optimization_desc_off">Enabled (System may kill service)</string>
     <string name="battery_optimization_allow">Allow Background Run</string>
+
+    <!-- Conversation List -->
+    <string name="conversation_list_title">会话列表</string>
+    <string name="new_conversation">新对话</string>
+    <string name="empty_conversations_title">还没有对话</string>
+    <string name="empty_conversations_hint">点击 + 号开始新对话</string>
+    <string name="rename_conversation">重命名会话</string>
+    <string name="delete_conversation">删除会话</string>
+    <string name="delete_conversation_message">确定要删除会话\"%1$s\"吗？此操作无法撤销。</string>
+    <string name="conversation_title_hint">会话标题</string>
+    <string name="conversation_title_empty_error">标题不能为空</string>
+    <string name="task_state_completed">已完成</string>
+    <string name="task_state_max_steps">达到最大步数</string>
+    <string name="task_state_user_stopped">已暂停</string>
+    <string name="task_state_error">出错</string>
+
+    <!-- Task Execution Locking -->
+    <string name="error_task_running_switch">任务执行期间禁止切换会话</string>
+    <string name="error_task_running_create">任务执行期间禁止创建新会话</string>
+    <string name="error_task_running_delete">任务执行期间禁止删除会话</string>
+    <string name="error_task_running_operation">任务执行期间禁止此操作</string>
+    <string name="task_continue_prompt_max_steps">任务达到最大步数，是否继续？</string>
+    <string name="task_continue_prompt_user_stopped">任务已暂停，是否继续？</string>
+    <string name="task_completed_message">该任务已完成，可以开始新任务</string>
+    <string name="continue_task">继续</string>
 </resources>
