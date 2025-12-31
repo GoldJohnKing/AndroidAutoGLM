@@ -566,19 +566,21 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     // 3. Call API
                     Log.d("AutoGLM_Debug", "Sending request to ModelClient...")
                     val responseText = modelClient?.sendRequest(apiHistory, screenshot) ?: "Error: Client null"
-                    Log.d("AutoGLM_Debug", "Response received: $responseText")
+                    // Unescape escape sequences like \n, \t, etc.
+                    val unescapedResponseText = unescapeResponse(responseText)
+                    Log.d("AutoGLM_Debug", "Response received: $unescapedResponseText")
 
-                    if (responseText.startsWith("Error")) {
-                        Log.e("AutoGLM_Debug", "API Error: $responseText")
-                        postError(responseText)
+                    if (unescapedResponseText.startsWith("Error")) {
+                        Log.e("AutoGLM_Debug", "API Error: $unescapedResponseText")
+                        postError(unescapedResponseText)
                         break
                     }
 
                     // Parse response parts for display
-                    val (thinking, _) = ActionParser.parseResponsePartsToParsedAction(responseText)
+                    val (thinking, _) = ActionParser.parseResponsePartsToParsedAction(unescapedResponseText)
 
                     // Extract raw action string for logging and storage
-                    val actionStr = ActionParser.extractActionString(responseText)
+                    val actionStr = ActionParser.extractActionString(unescapedResponseText)
 
                     Log.i("AutoGLM_Log", "\n==================================================")
                     Log.i("AutoGLM_Log", "💭 思考过程:")
@@ -601,7 +603,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     }
 
                     _uiState.value = _uiState.value.copy(
-                        messages = _uiState.value.messages + UiMessage("assistant", responseText)
+                        messages = _uiState.value.messages + UiMessage("assistant", unescapedResponseText)
                     )
 
                     // If DEBUG_MODE, stop here after one round
@@ -734,6 +736,19 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 Log.e("ChatViewModel", "Failed to remove image from history", e)
             }
         }
+    }
+
+    /**
+     * Unescapes escape sequences in the response text.
+     * Converts literal escape sequences like \n, \t, \" to their actual characters.
+     */
+    private fun unescapeResponse(text: String): String {
+        return text
+            .replace("\\n", "\n")
+            .replace("\\t", "\t")
+            .replace("\\r", "\r")
+            .replace("\\\"", "\"")
+            .replace("\\\\", "\\")
     }
 
     /**
