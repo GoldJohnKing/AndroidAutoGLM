@@ -503,17 +503,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     onStop = { stopTask() },
                     isRunning = true
                 )
-
-                // Wait for goHome animation to complete (only if we executed goHome)
-                if (isAppInForeground) {
-                    val animationDelay = DisplayUtils.getAnimationDelay(getApplication())
-                    if (animationDelay > 0) {
-                        Log.d("AutoGLM_Trace", "Waiting for goHome animation: ${animationDelay}ms")
-                        delay(animationDelay)
-                    } else {
-                        Log.d("AutoGLM_Trace", "Animations disabled, skipping animation delay")
-                    }
-                }
             }
 
             var isFinished = false
