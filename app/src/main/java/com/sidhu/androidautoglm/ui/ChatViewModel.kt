@@ -358,6 +358,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
         // Update UI state - explicitly clear error to avoid showing cancellation as error
         _uiState.value = _uiState.value.copy(isRunning = false, isLoading = false, error = null)
+
+        // Notify floating window controller that task is no longer running
+        // This ensures isTaskRunning flag is properly synchronized before dismissal
+        val service = AutoGLMService.getInstance()
+        service?.floatingWindowController?.setTaskRunning(false)
+
         // Note: The floating window will be dismissed by the UI layer (FloatingWindowContent.kt)
         // which also launches the main app after the window is fully hidden
     }
@@ -663,7 +669,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     isLoading = false,
                     error = null  // Explicitly clear any error
                 )
-                service?.updateFloatingStatus(getApplication<Application>().getString(R.string.status_stopped))
+                // Note: Do NOT call updateFloatingStatus() here as it creates a race condition
+                // where isTaskRunning stays true while status shows "stopped", preventing
+                // the window from hiding when app resumes. The window dismissal is handled
+                // by the FloatingWindowContent.kt stop button onClick handler.
                 updateTaskState(TaskEndState.USER_STOPPED, step)
             } catch (e: Exception) {
                 e.printStackTrace()
